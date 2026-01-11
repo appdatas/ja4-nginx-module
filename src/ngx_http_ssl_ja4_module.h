@@ -27,9 +27,10 @@ typedef struct ngx_ssl_ja4_s
     size_t extensions_sz; // Count of extensions NOT including ignored extensions (ALPN, SNI), for mem alloc etc
     char **extensions;    // List of extensions
 
-    // JA4one
-    size_t extensions_no_psk_count; // Count of extensions including GREASE values
-    char **extensions_no_psk;       // List of extensions including GREASE values
+    // JA4O - extensions excluding PSK
+    size_t extensions_no_psk_count; // Count for fingerprint (includes ignored ALPN/SNI, excludes PSK)
+    size_t extensions_no_psk_sz;    // Actual array size (excludes ignored and PSK)
+    char **extensions_no_psk;       // Array of extension values for hashing
 
     // this hash does not include signature algorithms for the time being
     char extension_hash_no_psk[65];           // Full SHA256 hash (32 bytes * 2 characters/byte + 1 for '\0')
@@ -352,7 +353,7 @@ ngx_ssl_ja4_detail_print(ngx_pool_t *pool, ngx_ssl_ja4_t *ja4)
                    pool->log, 0, "ssl_ja4: extensions_no_psk: length: %d",
                    ja4->extensions_no_psk_count);
 
-    for (i = 0; i < ja4->extensions_no_psk_count; ++i)
+    for (i = 0; i < ja4->extensions_no_psk_sz; ++i)
     {
         ngx_log_debug1(NGX_LOG_DEBUG_EVENT,
                        pool->log, 0, "ssl_ja4: |    extension_no_psk: %s",
@@ -402,6 +403,12 @@ static ngx_int_t ngx_http_ssl_ja4(ngx_http_request_t *r, ngx_http_variable_value
 // JA4 STRING
 void ngx_ssl_ja4_fp_string(ngx_pool_t *pool, ngx_ssl_ja4_t *ja4, ngx_str_t *out);
 static ngx_int_t ngx_http_ssl_ja4_string(ngx_http_request_t *r, ngx_http_variable_value_t *v, uintptr_t data);
+
+// JA4O (JA4 without PSK)
+void ngx_ssl_ja4o_fp(ngx_pool_t *pool, ngx_ssl_ja4_t *ja4, ngx_str_t *out);
+static ngx_int_t ngx_http_ssl_ja4o(ngx_http_request_t *r, ngx_http_variable_value_t *v, uintptr_t data);
+void ngx_ssl_ja4o_fp_string(ngx_pool_t *pool, ngx_ssl_ja4_t *ja4, ngx_str_t *out);
+static ngx_int_t ngx_http_ssl_ja4o_string(ngx_http_request_t *r, ngx_http_variable_value_t *v, uintptr_t data);
 
 // JA4one
 void ngx_ssl_ja4one_fp(ngx_pool_t *pool, ngx_ssl_ja4_t *ja4, ngx_str_t *out);

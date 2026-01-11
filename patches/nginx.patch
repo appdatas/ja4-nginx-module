@@ -3,7 +3,7 @@
 @@ -1701,6 +1701,20 @@ ngx_ssl_create_connection(ngx_ssl_t *ssl
  
      c->ssl = sc;
- 
+
 +    // Initialize JA4 extension parsing state
 +    sc->extensions_sz = 0;
 +    sc->extensions = NULL;
