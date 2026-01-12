@@ -3,7 +3,7 @@
 @@ -1701,6 +1701,20 @@ ngx_ssl_create_connection(ngx_ssl_t *ssl
  
      c->ssl = sc;
-
+ 
 +    // Initialize JA4 extension parsing state
 +    sc->extensions_sz = 0;
 +    sc->extensions = NULL;
@@ -383,7 +383,7 @@
  #endif /* _NGX_EVENT_OPENSSL_H_INCLUDED_ */
 --- nginx-1.28.1.orig/src/event/quic/ngx_event_quic_ssl.c
 +++ nginx-1.28.1/src/event/quic/ngx_event_quic_ssl.c
-@@ -407,6 +407,52 @@ ngx_quic_crypto_input(ngx_connection_t *
+@@ -407,6 +407,74 @@ ngx_quic_crypto_input(ngx_connection_t *
      for (cl = data; cl; cl = cl->next) {
          b = cl->buf;
  
@@ -413,8 +413,30 @@
 +                
 +                // Append this frame's data
 +                if (c->ssl->raw_client_hello != NULL) {
-+                    ngx_memcpy(c->ssl->raw_client_hello + c->ssl->raw_client_hello_len, p, len);
-+                    c->ssl->raw_client_hello_len += len;
++                    // Get expected total length from the header
++                    if (c->ssl->raw_client_hello_len >= 4) {
++                        size_t expected_len = 4 + ((c->ssl->raw_client_hello[1] << 16) |
++                                                   (c->ssl->raw_client_hello[2] << 8) |
++                                                   c->ssl->raw_client_hello[3]);
++                        
++                        // Bounds check: ensure frame data doesn't overflow the allocated buffer
++                        // Even though allocation is based on header length, a malicious client
++                        // could send more data than the header claimed
++                        if (c->ssl->raw_client_hello_len + len > expected_len) {
++                            ngx_log_error(NGX_LOG_ALERT, c->log, 0,
++                                         "QUIC frame data (%uz bytes accumulated) exceeds "
++                                         "ClientHello header length (%uz bytes), truncating",
++                                         c->ssl->raw_client_hello_len + len, expected_len);
++                            // Truncate to prevent buffer overflow
++                            len = expected_len - c->ssl->raw_client_hello_len;
++                        }
++                    }
++                    
++                    // Only copy if we have valid data to copy
++                    if (len > 0) {
++                        ngx_memcpy(c->ssl->raw_client_hello + c->ssl->raw_client_hello_len, p, len);
++                        c->ssl->raw_client_hello_len += len;
++                    }
 +                    
 +                    // Check if we have the complete message
 +                    if (c->ssl->raw_client_hello_len >= 4) {
@@ -436,7 +458,7 @@
          if (!SSL_provide_quic_data(ssl_conn, level, b->pos, b->last - b->pos)) {
              ngx_ssl_error(NGX_LOG_INFO, c->log, 0,
                            "SSL_provide_quic_data() failed");
-@@ -414,6 +460,9 @@ ngx_quic_crypto_input(ngx_connection_t *
+@@ -414,6 +482,9 @@ ngx_quic_crypto_input(ngx_connection_t *
          }
      }
  
@@ -446,7 +468,7 @@
      n = SSL_do_handshake(ssl_conn);
  
      ngx_log_debug1(NGX_LOG_DEBUG_EVENT, c->log, 0, "SSL_do_handshake: %d", n);
-@@ -456,6 +505,11 @@ ngx_quic_crypto_input(ngx_connection_t *
+@@ -456,6 +527,11 @@ ngx_quic_crypto_input(ngx_connection_t *
  
      c->ssl->handshaked = 1;
  
@@ -458,18 +480,32 @@
      frame = ngx_quic_alloc_frame(c);
      if (frame == NULL) {
          return NGX_ERROR;
+@@ -541,7 +617,7 @@ ngx_quic_init_connection(ngx_connection_
+                       "quic SSL_set_quic_method() failed");
+         return NGX_ERROR;
+     }
+-
++    
+ #ifdef OPENSSL_INFO_QUIC
+     if (SSL_CTX_get_max_early_data(qc->conf->ssl->ctx)) {
+         SSL_set_quic_early_data_enabled(ssl_conn, 1);
 --- nginx-1.28.1.orig/src/http/modules/ngx_http_ssl_module.c
 +++ nginx-1.28.1/src/http/modules/ngx_http_ssl_module.c
-@@ -440,6 +440,13 @@ ngx_http_ssl_alpn_select(ngx_ssl_conn_t
+@@ -440,6 +440,18 @@ ngx_http_ssl_alpn_select(ngx_ssl_conn_t
      ngx_connection_t        *c;
  
      c = ngx_ssl_get_connection(ssl_conn);
 +    // add first alpn value for ja4 to c->ssl
-+    if (c->ssl->first_alpn == NULL) {
-+        c->ssl->first_alpn = ngx_palloc(c->pool, in[0] + 1);
-+        // number of bytes for alpn is stored in in[0]
-+        ngx_memcpy(c->ssl->first_alpn, &in[1], in[0]);
-+        c->ssl->first_alpn[in[0]] = '\0';
++    if (c->ssl->first_alpn == NULL && inlen > 0) {
++        size_t alpn_len = in[0];
++        // bounds check: ensure buffer has enough data
++        if (alpn_len > 0 && inlen >= alpn_len + 1) {
++            c->ssl->first_alpn = ngx_palloc(c->pool, alpn_len + 1);
++            if (c->ssl->first_alpn != NULL) {
++                ngx_memcpy(c->ssl->first_alpn, &in[1], alpn_len);
++                c->ssl->first_alpn[alpn_len] = '\0';
++            }
++        }
 +    }
  #endif
  
