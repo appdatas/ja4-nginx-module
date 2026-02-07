@@ -275,6 +275,7 @@ int ngx_ssl_ja4(ngx_connection_t *c, ngx_pool_t *pool, ngx_ssl_ja4_t *ja4)
     // no need for sz here bc not counting ignored extensions
     ja4->extensions_no_psk = NULL;
     ja4->extensions_no_psk_count = 0;
+    ja4->extensions_count_no_psk = 0;
 
     if (c->ssl->extensions_sz && c->ssl->extensions)
     {
@@ -324,6 +325,19 @@ int ngx_ssl_ja4(ngx_connection_t *c, ngx_pool_t *pool, ngx_ssl_ja4_t *ja4)
             }
             ngx_memcpy(ja4->extensions_no_psk[ja4->extensions_no_psk_count], ext, ext_len);
             ja4->extensions_no_psk_count++;
+        }
+
+        // Count extensions for JA4O: includes ignored extensions (like JA4) but excludes dynamic (PSK/PADDING)
+        // This is done in a second pass to properly track the count
+        ja4->extensions_count_no_psk = ja4->extensions_count;
+        for (i = 0; i < c->ssl->extensions_sz; ++i) {
+            if (ngx_ssl_ja4_is_ext_greased (c->ssl->extensions[i])) {
+                continue;
+            }
+            // Subtract dynamic extensions from the count
+            if (ngx_ssl_ja4_is_ext_dynamic(c->ssl->extensions[i])) {
+                ja4->extensions_count_no_psk--;
+            }
         }
 
         qsort(ja4->extensions, ja4->extensions_sz, sizeof(char *), compare_hexes);
@@ -955,8 +969,8 @@ void ngx_ssl_ja4o_fp(ngx_pool_t *pool, ngx_ssl_ja4_t *ja4, ngx_str_t *out)
     ngx_snprintf (out->data + cur, 3, "%02d", ciphers_sz);
     cur += 2;
 
-    // 2 character count of extensions (without PSK)
-    ngx_snprintf (out->data + cur, 3, "%02d", ja4->extensions_no_psk_count);
+    // 2 character count of extensions (includes ignored like ALPN/SNI, but excludes PSK/PADDING)
+    ngx_snprintf (out->data + cur, 3, "%02zu", ja4->extensions_count_no_psk);
     cur += 2;
 
     // Add ALPN first/last value per JA4 spec
@@ -1095,8 +1109,8 @@ void ngx_ssl_ja4o_fp_string(ngx_pool_t *pool, ngx_ssl_ja4_t *ja4, ngx_str_t *out
     }
     cur += 2;
 
-    // 2 character count of extensions (no PSK)
-    ngx_snprintf (out->data + cur, 3, "%02d", ja4->extensions_no_psk_count);
+    // 2 character count of extensions (includes ignored like ALPN/SNI, but excludes PSK/PADDING)
+    ngx_snprintf (out->data + cur, 3, "%02zu", ja4->extensions_count_no_psk);
     cur += 2;
 
     // Add 2 characters for the ALPN ja4->alpn_first_value

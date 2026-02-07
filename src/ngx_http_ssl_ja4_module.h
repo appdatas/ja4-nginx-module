@@ -29,9 +29,10 @@ typedef struct ngx_ssl_ja4_s
     size_t extensions_sz; // Count of extensions NOT including ignored extensions (ALPN, SNI), for mem alloc etc
     char **extensions;    // List of extensions
 
-    // JA4one
-    size_t extensions_no_psk_count; // Count of extensions including GREASE values
-    char **extensions_no_psk;       // List of extensions including GREASE values
+    // JA4one / JA4O
+    size_t extensions_count_no_psk; // Count of extensions including ignored (ALPN, SNI) but excluding dynamic (PSK, PADDING)
+    size_t extensions_no_psk_count; // Count of extensions excluding both ignored and dynamic extensions
+    char **extensions_no_psk;       // List of extensions excluding both ignored and dynamic extensions
 
     // this hash does not include signature algorithms for the time being
     char extension_hash_no_psk[65];           // Full SHA256 hash (32 bytes * 2 characters/byte + 1 for '\0')
