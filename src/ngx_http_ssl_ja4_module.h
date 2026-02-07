@@ -34,9 +34,13 @@ typedef struct ngx_ssl_ja4_s
     size_t extensions_no_psk_count; // Count of extensions excluding both ignored and dynamic extensions
     char **extensions_no_psk;       // List of extensions excluding both ignored and dynamic extensions
 
-    // this hash does not include signature algorithms for the time being
+    // JA4ONE hash: does not include signature algorithms
     char extension_hash_no_psk[65];           // Full SHA256 hash (32 bytes * 2 characters/byte + 1 for '\0')
     char extension_hash_no_psk_truncated[13]; // Truncated SHA256 hash (12 bytes * 2 characters/byte + 1 for '\0')
+
+    // JA4O hash: includes signature algorithms (like JA4 but uses extensions_no_psk)
+    char extension_hash_ja4o[65];           // Full SHA256 hash (32 bytes * 2 characters/byte + 1 for '\0')
+    char extension_hash_ja4o_truncated[13]; // Truncated SHA256 hash (12 bytes * 2 characters/byte + 1 for '\0')
 
     size_t sigalgs_sz; // Count of signature algorithms
     char **sigalgs;    // List of signature algorithms

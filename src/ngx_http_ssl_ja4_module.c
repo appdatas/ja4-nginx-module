@@ -532,6 +532,69 @@ int ngx_ssl_ja4(ngx_connection_t *c, ngx_pool_t *pool, ngx_ssl_ja4_t *ja4)
         ngx_memset(ja4->extension_hash_no_psk_truncated, '0', 12);
         ja4->extension_hash_no_psk_truncated[12] = '\0'; // Null-terminate the truncated hex string
     }
+
+    // generate hash for JA4O: extensions_no_psk + signature algorithms (like JA4)
+    if (ja4->extensions_no_psk && ja4->extensions_no_psk_count)
+    {
+        unsigned char hash_result[SHA256_DIGEST_LENGTH];
+        SHA256_CTX sha256_ja4o;
+        if (SHA256_Init(&sha256_ja4o) != 1)
+        {
+            return NGX_DECLINED;
+        }
+
+        for (i = 0; i < ja4->extensions_no_psk_count; i++)
+        {
+            SHA256_Update(&sha256_ja4o, ja4->extensions_no_psk[i], strlen(ja4->extensions_no_psk[i]));
+            if (i < ja4->extensions_no_psk_count - 1)
+            {
+                SHA256_Update(&sha256_ja4o, ",", 1);
+            }
+        }
+
+        // Add signature algorithms (like JA4, unlike JA4ONE)
+        if (ja4->sigalgs_sz)
+        {
+            // add underscore
+            SHA256_Update(&sha256_ja4o, "_", 1);
+            for (i = 0; i < ja4->sigalgs_sz; i++)
+            {
+                SHA256_Update(&sha256_ja4o, ja4->sigalgs[i], strlen(ja4->sigalgs[i]));
+                if (i < ja4->sigalgs_sz - 1)
+                {
+                    SHA256_Update(&sha256_ja4o, ",", 1);
+                }
+            }
+        }
+
+        SHA256_Final(hash_result, &sha256_ja4o);
+
+        // Convert the full hash to hexadecimal format
+        char hex_hash[2 * SHA256_DIGEST_LENGTH + 1]; // +1 for null-terminator
+        for (i = 0; i < SHA256_DIGEST_LENGTH; i++)
+        {
+            sprintf(hex_hash + 2 * i, "%02x", hash_result[i]);
+        }
+        ngx_memcpy(ja4->extension_hash_ja4o, hex_hash, 2 * SHA256_DIGEST_LENGTH);
+        ja4->extension_hash_ja4o[2 * SHA256_DIGEST_LENGTH] = '\0';
+
+        // Convert the truncated hash to hexadecimal format
+        char hex_hash_truncated[2 * 6 + 1]; // 6 bytes, 2 characters each = 12 characters plus null-terminator
+        for (i = 0; i < 6; i++)
+        {
+            sprintf(hex_hash_truncated + 2 * i, "%02x", hash_result[i]);
+        }
+        // Copy the first 6 bytes (12 characters) for the truncated hash
+        ngx_memcpy(ja4->extension_hash_ja4o_truncated, hex_hash_truncated, 12);
+        ja4->extension_hash_ja4o_truncated[12] = '\0';
+    }
+    else
+    {
+        ngx_memset(ja4->extension_hash_ja4o, '0', 2 * SHA256_DIGEST_LENGTH);
+        ja4->extension_hash_ja4o[2 * SHA256_DIGEST_LENGTH] = '\0';
+        ngx_memset(ja4->extension_hash_ja4o_truncated, '0', 12);
+        ja4->extension_hash_ja4o_truncated[12] = '\0'; // Null-terminate the truncated hex string
+    }
     return NGX_OK;
 }
 
@@ -988,8 +1051,8 @@ void ngx_ssl_ja4o_fp(ngx_pool_t *pool, ngx_ssl_ja4_t *ja4, ngx_str_t *out)
     // Add underscore
     out->data[cur++] = '_';
 
-    // Add extension hash (no PSK), 12 characters for truncated hash
-    ngx_snprintf(out->data + cur, 13, "%s", ja4->extension_hash_no_psk_truncated);
+    // Add extension hash (no PSK + sigalgs), 12 characters for truncated hash
+    ngx_snprintf(out->data + cur, 13, "%s", ja4->extension_hash_ja4o_truncated);
     cur += 12;
 
     // Null-terminate the string
