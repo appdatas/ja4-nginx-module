@@ -6,6 +6,8 @@ typedef struct {
     ngx_str_t   ja4;
     ngx_str_t   ja4_string;
     ngx_str_t   ja4one;
+    ngx_str_t   ja4o;
+    ngx_str_t   ja4o_string;
 } ngx_http_ssl_ja4_ctx_t;
 
 // STRUCTS
@@ -406,6 +408,13 @@ static ngx_int_t ngx_http_ssl_ja4_string(ngx_http_request_t *r, ngx_http_variabl
 // JA4one
 void ngx_ssl_ja4one_fp(ngx_pool_t *pool, ngx_ssl_ja4_t *ja4, ngx_str_t *out);
 static ngx_int_t ngx_http_ssl_ja4one(ngx_http_request_t *r, ngx_http_variable_value_t *v, uintptr_t data);
+
+// JA4O
+void ngx_ssl_ja4o_fp(ngx_pool_t *pool, ngx_ssl_ja4_t *ja4, ngx_str_t *out);
+static ngx_int_t ngx_http_ssl_ja4o(ngx_http_request_t *r, ngx_http_variable_value_t *v, uintptr_t data);
+// JA4O STRING
+void ngx_ssl_ja4o_fp_string(ngx_pool_t *pool, ngx_ssl_ja4_t *ja4, ngx_str_t *out);
+static ngx_int_t ngx_http_ssl_ja4o_string(ngx_http_request_t *r, ngx_http_variable_value_t *v, uintptr_t data);
 
 // JA4S
 int ngx_ssl_ja4s(ngx_connection_t *c, ngx_pool_t *pool, ngx_ssl_ja4s_t *ja4);
