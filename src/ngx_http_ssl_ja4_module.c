@@ -271,115 +271,130 @@ int ngx_ssl_ja4(ngx_connection_t *c, ngx_pool_t *pool, ngx_ssl_ja4_t *ja4)
     ja4->extensions_sz = 0;
     ja4->extensions_count = 0;
 
-    // extensions_no_psk
-    // no need for sz here bc not counting ignored extensions
+    // JA4ONE: excludes ALPN/SNI (ignored) and PSK+PADDING (dynamic)
     ja4->extensions_no_psk = NULL;
     ja4->extensions_no_psk_count = 0;
     ja4->extensions_count_no_psk = 0;
 
+    // JA4O: excludes ALPN/SNI (ignored) and only PSK 0029; keeps PADDING 0015
+    ja4->extensions_ja4o = NULL;
+    ja4->extensions_ja4o_sz = 0;
+    ja4->extensions_count_ja4o = 0;
+
     if (c->ssl->extensions_sz && c->ssl->extensions)
     {
-        ja4->extensions = ngx_pnalloc (pool, c->ssl->extensions_sz * sizeof(char*));
-        ja4->extensions_no_psk = ngx_pnalloc (pool, c->ssl->extensions_sz * sizeof(char*));
-        if (ja4->extensions == NULL || ja4->extensions_no_psk == NULL) {
+        ja4->extensions = ngx_pnalloc(pool, c->ssl->extensions_sz * sizeof(char *));
+        ja4->extensions_no_psk = ngx_pnalloc(pool, c->ssl->extensions_sz * sizeof(char *));
+        ja4->extensions_ja4o = ngx_pnalloc(pool, c->ssl->extensions_sz * sizeof(char *));
+        if (ja4->extensions == NULL || ja4->extensions_no_psk == NULL || ja4->extensions_ja4o == NULL) {
             return NGX_ERROR;
         }
 
         for (i = 0; i < c->ssl->extensions_sz; ++i) {
 
-            if (ngx_ssl_ja4_is_ext_greased (c->ssl->extensions[i])) {
+            if (ngx_ssl_ja4_is_ext_greased(c->ssl->extensions[i])) {
                 continue;
             }
 
             char *ext = (char *)c->ssl->extensions[i];
-            size_t ext_len = strlen (ext) + 1;
+            size_t ext_len = strlen(ext) + 1;
 
+            /* All non-GREASE extensions contribute to ja4 count */
             ja4->extensions_count++;
 
-            // ignored extensions are only counted, not hashed
+            /* JA4ONE count: exclude PSK (0029) and PADDING (0015) */
+            if (!ngx_ssl_ja4_is_ext_dynamic(c->ssl->extensions[i])) {
+                ja4->extensions_count_no_psk++;
+            }
+
+            /* JA4O count: exclude only PSK (0029), keep PADDING (0015) */
+            if (!ngx_ssl_ja4_is_ext_psk(c->ssl->extensions[i])) {
+                ja4->extensions_count_ja4o++;
+            }
+
+            /* Ignored extensions (ALPN/SNI) are only counted, not added to arrays */
             if (ngx_ssl_ja4_is_ext_ignored(c->ssl->extensions[i])) {
                 continue;
             }
 
-            // Allocate memory for the extension string and copy it
+            /* Add to main extensions array (used by JA4) */
             ja4->extensions[ja4->extensions_sz] = ngx_pnalloc(pool, ext_len);
             if (ja4->extensions[ja4->extensions_sz] == NULL) {
-                ngx_log_error (NGX_LOG_ERR, c->log, -1, "Failed to allocate memory");
+                ngx_log_error(NGX_LOG_ERR, c->log, -1, "Failed to allocate memory");
                 return NGX_ERROR;
             }
             ngx_memcpy(ja4->extensions[ja4->extensions_sz], ext, ext_len);
             ja4->extensions_sz++;
 
-            // for no psk ignored extensions are not counted, not hashed
-
-            // check if the extension is not a PSK extension
-            if (ngx_ssl_ja4_is_ext_dynamic(c->ssl->extensions[i])) {
-                continue;
+            /* JA4ONE array: exclude PSK (0029) and PADDING (0015) */
+            if (!ngx_ssl_ja4_is_ext_dynamic(c->ssl->extensions[i])) {
+                ja4->extensions_no_psk[ja4->extensions_no_psk_count] = ngx_pnalloc(pool, ext_len);
+                if (ja4->extensions_no_psk[ja4->extensions_no_psk_count] == NULL) {
+                    ngx_log_error(NGX_LOG_ERR, c->log, -1, "Failed to allocate memory");
+                    return NGX_ERROR;
+                }
+                ngx_memcpy(ja4->extensions_no_psk[ja4->extensions_no_psk_count], ext, ext_len);
+                ja4->extensions_no_psk_count++;
             }
 
-            ja4->extensions_no_psk[ja4->extensions_no_psk_count] = ngx_pnalloc(pool, ext_len);
-
-            if (ja4->extensions_no_psk[ja4->extensions_no_psk_count] == NULL) {
-                ngx_log_error (NGX_LOG_ERR, c->log, -1, "Failed to allocate memory");
-                return NGX_ERROR;
-            }
-            ngx_memcpy(ja4->extensions_no_psk[ja4->extensions_no_psk_count], ext, ext_len);
-            ja4->extensions_no_psk_count++;
-        }
-
-        // Count extensions for JA4O: includes ignored extensions (like JA4) but excludes dynamic (PSK/PADDING)
-        // This is done in a second pass to properly track the count
-        ja4->extensions_count_no_psk = ja4->extensions_count;
-        for (i = 0; i < c->ssl->extensions_sz; ++i) {
-            if (ngx_ssl_ja4_is_ext_greased (c->ssl->extensions[i])) {
-                continue;
-            }
-            // Subtract dynamic extensions from the count
-            if (ngx_ssl_ja4_is_ext_dynamic(c->ssl->extensions[i])) {
-                ja4->extensions_count_no_psk--;
+            /* JA4O array: exclude only PSK (0029); PADDING (0015) is kept */
+            if (!ngx_ssl_ja4_is_ext_psk(c->ssl->extensions[i])) {
+                ja4->extensions_ja4o[ja4->extensions_ja4o_sz] = ngx_pnalloc(pool, ext_len);
+                if (ja4->extensions_ja4o[ja4->extensions_ja4o_sz] == NULL) {
+                    ngx_log_error(NGX_LOG_ERR, c->log, -1, "Failed to allocate memory");
+                    return NGX_ERROR;
+                }
+                ngx_memcpy(ja4->extensions_ja4o[ja4->extensions_ja4o_sz], ext, ext_len);
+                ja4->extensions_ja4o_sz++;
             }
         }
 
         qsort(ja4->extensions, ja4->extensions_sz, sizeof(char *), compare_hexes);
         qsort(ja4->extensions_no_psk, ja4->extensions_no_psk_count, sizeof(char *), compare_hexes);
+        qsort(ja4->extensions_ja4o, ja4->extensions_ja4o_sz, sizeof(char *), compare_hexes);
     }
 
 
-    /* Signature Algorithms */
+    /* Signature Algorithms
+     * Guard: only compute once per connection — prevents overwriting with a
+     * stale 0 if SSL_get_sigalgs is called again after the first successful
+     * call (each nginx variable triggers ngx_ssl_ja4 independently). */
 
-    int num_sigalgs = SSL_get_sigalgs (ssl, 0, NULL, NULL, NULL, NULL, NULL);
+    if (c->ssl->sigalgs_hash_values == NULL) {
+        int num_sigalgs = SSL_get_sigalgs(ssl, 0, NULL, NULL, NULL, NULL, NULL);
 
-    if (num_sigalgs > -1) {
-
-        char **sigalgs_hex_strings = ngx_pnalloc(c->pool, num_sigalgs * sizeof(char *));
-        if (sigalgs_hex_strings == NULL) {
-            ngx_log_error(NGX_LOG_ERR, c->log, -1, "Failed to allocate memory.");
-            return NGX_ERROR;
-        }
-
-        for (int i = 0; i < num_sigalgs; ++i) {
-
-            int psign, phash, psignhash;
-            unsigned char rsig, rhash;
-            SSL_get_sigalgs (ssl, i, &psign, &phash, &psignhash, &rsig, &rhash);
-
-            char hex_string[5];
-            ngx_sprintf ((u_char *)&hex_string[0],  "%02xd%02xd", rhash, rsig);
-            hex_string[4] = '\0';
-
-            sigalgs_hex_strings[i] = ngx_pnalloc(c->pool, sizeof(hex_string));
-            if (sigalgs_hex_strings[i] == NULL) {
-                ngx_log_error (NGX_LOG_ERR, c->log, -1, "Failed to allocate memory");
+        if (num_sigalgs > 0) {
+            char **sigalgs_hex_strings = ngx_pnalloc(c->pool, num_sigalgs * sizeof(char *));
+            if (sigalgs_hex_strings == NULL) {
+                ngx_log_error(NGX_LOG_ERR, c->log, -1, "Failed to allocate memory.");
                 return NGX_ERROR;
             }
 
-            ngx_memcpy (sigalgs_hex_strings[i], hex_string, sizeof(hex_string));
+            for (int i = 0; i < num_sigalgs; ++i) {
+
+                int psign, phash, psignhash;
+                unsigned char rsig, rhash;
+                SSL_get_sigalgs(ssl, i, &psign, &phash, &psignhash, &rsig, &rhash);
+
+                char hex_string[5];
+                ngx_sprintf((u_char *)&hex_string[0], "%02xd%02xd", rhash, rsig);
+                hex_string[4] = '\0';
+
+                sigalgs_hex_strings[i] = ngx_pnalloc(c->pool, sizeof(hex_string));
+                if (sigalgs_hex_strings[i] == NULL) {
+                    ngx_log_error(NGX_LOG_ERR, c->log, -1, "Failed to allocate memory");
+                    return NGX_ERROR;
+                }
+
+                ngx_memcpy(sigalgs_hex_strings[i], hex_string, sizeof(hex_string));
+            }
+
+            c->ssl->sigalgs_hash_values = sigalgs_hex_strings;
+            c->ssl->sigalgs_sz = num_sigalgs;
+        } else {
+            c->ssl->sigalgs_sz = 0;
         }
-
-        c->ssl->sigalgs_hash_values = sigalgs_hex_strings;
     }
-
-    c->ssl->sigalgs_sz = num_sigalgs;
 
     // signature algorithms
     ja4->sigalgs = NULL;
@@ -533,8 +548,8 @@ int ngx_ssl_ja4(ngx_connection_t *c, ngx_pool_t *pool, ngx_ssl_ja4_t *ja4)
         ja4->extension_hash_no_psk_truncated[12] = '\0'; // Null-terminate the truncated hex string
     }
 
-    // generate hash for JA4O: extensions_no_psk + signature algorithms (like JA4)
-    if (ja4->extensions_no_psk && ja4->extensions_no_psk_count)
+    // generate hash for JA4O: extensions_ja4o (excludes only PSK 0029) + signature algorithms
+    if (ja4->extensions_ja4o && ja4->extensions_ja4o_sz)
     {
         unsigned char hash_result[SHA256_DIGEST_LENGTH];
         SHA256_CTX sha256_ja4o;
@@ -543,10 +558,10 @@ int ngx_ssl_ja4(ngx_connection_t *c, ngx_pool_t *pool, ngx_ssl_ja4_t *ja4)
             return NGX_DECLINED;
         }
 
-        for (i = 0; i < ja4->extensions_no_psk_count; i++)
+        for (i = 0; i < ja4->extensions_ja4o_sz; i++)
         {
-            SHA256_Update(&sha256_ja4o, ja4->extensions_no_psk[i], strlen(ja4->extensions_no_psk[i]));
-            if (i < ja4->extensions_no_psk_count - 1)
+            SHA256_Update(&sha256_ja4o, ja4->extensions_ja4o[i], strlen(ja4->extensions_ja4o[i]));
+            if (i < ja4->extensions_ja4o_sz - 1)
             {
                 SHA256_Update(&sha256_ja4o, ",", 1);
             }
@@ -555,7 +570,6 @@ int ngx_ssl_ja4(ngx_connection_t *c, ngx_pool_t *pool, ngx_ssl_ja4_t *ja4)
         // Add signature algorithms (like JA4, unlike JA4ONE)
         if (ja4->sigalgs_sz)
         {
-            // add underscore
             SHA256_Update(&sha256_ja4o, "_", 1);
             for (i = 0; i < ja4->sigalgs_sz; i++)
             {
@@ -570,7 +584,7 @@ int ngx_ssl_ja4(ngx_connection_t *c, ngx_pool_t *pool, ngx_ssl_ja4_t *ja4)
         SHA256_Final(hash_result, &sha256_ja4o);
 
         // Convert the full hash to hexadecimal format
-        char hex_hash[2 * SHA256_DIGEST_LENGTH + 1]; // +1 for null-terminator
+        char hex_hash[2 * SHA256_DIGEST_LENGTH + 1];
         for (i = 0; i < SHA256_DIGEST_LENGTH; i++)
         {
             sprintf(hex_hash + 2 * i, "%02x", hash_result[i]);
@@ -578,13 +592,12 @@ int ngx_ssl_ja4(ngx_connection_t *c, ngx_pool_t *pool, ngx_ssl_ja4_t *ja4)
         ngx_memcpy(ja4->extension_hash_ja4o, hex_hash, 2 * SHA256_DIGEST_LENGTH);
         ja4->extension_hash_ja4o[2 * SHA256_DIGEST_LENGTH] = '\0';
 
-        // Convert the truncated hash to hexadecimal format
-        char hex_hash_truncated[2 * 6 + 1]; // 6 bytes, 2 characters each = 12 characters plus null-terminator
+        // Truncated (first 12 hex chars = 6 bytes)
+        char hex_hash_truncated[2 * 6 + 1];
         for (i = 0; i < 6; i++)
         {
             sprintf(hex_hash_truncated + 2 * i, "%02x", hash_result[i]);
         }
-        // Copy the first 6 bytes (12 characters) for the truncated hash
         ngx_memcpy(ja4->extension_hash_ja4o_truncated, hex_hash_truncated, 12);
         ja4->extension_hash_ja4o_truncated[12] = '\0';
     }
@@ -593,7 +606,7 @@ int ngx_ssl_ja4(ngx_connection_t *c, ngx_pool_t *pool, ngx_ssl_ja4_t *ja4)
         ngx_memset(ja4->extension_hash_ja4o, '0', 2 * SHA256_DIGEST_LENGTH);
         ja4->extension_hash_ja4o[2 * SHA256_DIGEST_LENGTH] = '\0';
         ngx_memset(ja4->extension_hash_ja4o_truncated, '0', 12);
-        ja4->extension_hash_ja4o_truncated[12] = '\0'; // Null-terminate the truncated hex string
+        ja4->extension_hash_ja4o_truncated[12] = '\0';
     }
     return NGX_OK;
 }
@@ -1032,8 +1045,8 @@ void ngx_ssl_ja4o_fp(ngx_pool_t *pool, ngx_ssl_ja4_t *ja4, ngx_str_t *out)
     ngx_snprintf (out->data + cur, 3, "%02d", ciphers_sz);
     cur += 2;
 
-    // 2 character count of extensions (includes ignored like ALPN/SNI, but excludes PSK/PADDING)
-    ngx_snprintf (out->data + cur, 3, "%02zu", ja4->extensions_count_no_psk);
+    // 2 character count of extensions (includes ALPN/SNI, excludes only PSK 0029; keeps PADDING 0015)
+    ngx_snprintf (out->data + cur, 3, "%02zu", ja4->extensions_count_ja4o);
     cur += 2;
 
     // Add ALPN first/last value per JA4 spec
@@ -1123,9 +1136,9 @@ void ngx_ssl_ja4o_fp_string(ngx_pool_t *pool, ngx_ssl_ja4_t *ja4, ngx_str_t *out
     {
         len += strlen(ja4->ciphers[i]) + 1; // strlen of cipher + comma
     }
-    for (i = 0; i < ja4->extensions_no_psk_count; ++i)
+    for (i = 0; i < ja4->extensions_ja4o_sz; ++i)
     {
-        len += strlen(ja4->extensions_no_psk[i]) + 1; // strlen of extension + comma
+        len += strlen(ja4->extensions_ja4o[i]) + 1; // strlen of extension + comma
     }
 
     len += 256; // Safety padding
@@ -1172,8 +1185,8 @@ void ngx_ssl_ja4o_fp_string(ngx_pool_t *pool, ngx_ssl_ja4_t *ja4, ngx_str_t *out
     }
     cur += 2;
 
-    // 2 character count of extensions (includes ignored like ALPN/SNI, but excludes PSK/PADDING)
-    ngx_snprintf (out->data + cur, 3, "%02zu", ja4->extensions_count_no_psk);
+    // 2 character count of extensions (includes ALPN/SNI, excludes only PSK 0029; keeps PADDING 0015)
+    ngx_snprintf (out->data + cur, 3, "%02zu", ja4->extensions_count_ja4o);
     cur += 2;
 
     // Add 2 characters for the ALPN ja4->alpn_first_value
@@ -1197,12 +1210,12 @@ void ngx_ssl_ja4o_fp_string(ngx_pool_t *pool, ngx_ssl_ja4_t *ja4, ngx_str_t *out
     // Separator
     out->data[cur++] = '_';
 
-    // Add extensions (no PSK, no signature algorithms)
-    if (ja4->extensions_no_psk_count > 0)
+    // Add extensions (excludes only PSK 0029; PADDING 0015 is included)
+    if (ja4->extensions_ja4o_sz > 0)
     {
-        for (i = 0; i < ja4->extensions_no_psk_count; ++i)
+        for (i = 0; i < ja4->extensions_ja4o_sz; ++i)
         {
-            size_t n = ngx_snprintf(out->data + cur, strlen(ja4->extensions_no_psk[i]) + 2, "%s,", ja4->extensions_no_psk[i]) - out->data - cur;
+            size_t n = ngx_snprintf(out->data + cur, strlen(ja4->extensions_ja4o[i]) + 2, "%s,", ja4->extensions_ja4o[i]) - out->data - cur;
             cur += n;
         }
         cur--; // Remove the trailing comma

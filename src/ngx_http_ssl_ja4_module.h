@@ -29,16 +29,21 @@ typedef struct ngx_ssl_ja4_s
     size_t extensions_sz; // Count of extensions NOT including ignored extensions (ALPN, SNI), for mem alloc etc
     char **extensions;    // List of extensions
 
-    // JA4one / JA4O
-    size_t extensions_count_no_psk; // Count of extensions including ignored (ALPN, SNI) but excluding dynamic (PSK, PADDING)
-    size_t extensions_no_psk_count; // Count of extensions excluding both ignored and dynamic extensions
-    char **extensions_no_psk;       // List of extensions excluding both ignored and dynamic extensions
+    // JA4one: excludes both ignored (ALPN, SNI) and dynamic (PSK 0029, PADDING 0015) from array
+    size_t extensions_count_no_psk; // Count including ALPN/SNI but excluding PSK+PADDING
+    size_t extensions_no_psk_count; // Actual array size: excludes ALPN/SNI AND PSK+PADDING
+    char **extensions_no_psk;       // Array: excludes ALPN/SNI AND PSK+PADDING
 
     // JA4ONE hash: does not include signature algorithms
     char extension_hash_no_psk[65];           // Full SHA256 hash (32 bytes * 2 characters/byte + 1 for '\0')
     char extension_hash_no_psk_truncated[13]; // Truncated SHA256 hash (12 bytes * 2 characters/byte + 1 for '\0')
 
-    // JA4O hash: includes signature algorithms (like JA4 but uses extensions_no_psk)
+    // JA4O: excludes only PSK (0029) from count and array; PADDING (0015) is kept
+    size_t extensions_count_ja4o; // Count including ALPN/SNI but excluding only PSK (0029)
+    size_t extensions_ja4o_sz;    // Actual array size: excludes ALPN/SNI AND only PSK (0029)
+    char **extensions_ja4o;       // Array: excludes ALPN/SNI AND only PSK (0029)
+
+    // JA4O hash: includes signature algorithms, based on extensions_ja4o
     char extension_hash_ja4o[65];           // Full SHA256 hash (32 bytes * 2 characters/byte + 1 for '\0')
     char extension_hash_ja4o_truncated[13]; // Truncated SHA256 hash (12 bytes * 2 characters/byte + 1 for '\0')
 
@@ -204,6 +209,12 @@ static int ngx_ssl_ja4_is_ext_dynamic(const char *ext)
         }
     }
     return 0;
+}
+
+/* Returns 1 if ext is PRE_SHARED_KEY (0029) only — used for JA4O which keeps PADDING */
+static int ngx_ssl_ja4_is_ext_psk(const char *ext)
+{
+    return (strcmp(ext, "0029") == 0);
 }
 
 static int ngx_ssl_ja4_is_ext_ignored(const char *ext)
