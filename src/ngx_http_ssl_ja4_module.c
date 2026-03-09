@@ -299,16 +299,21 @@ int ngx_ssl_ja4(ngx_connection_t *c, ngx_pool_t *pool, ngx_ssl_ja4_t *ja4)
             char *ext = (char *)c->ssl->extensions[i];
             size_t ext_len = strlen(ext) + 1;
 
-            /* All non-GREASE extensions contribute to ja4 count */
-            ja4->extensions_count++;
+            /* All non-GREASE, non-PADDING extensions contribute to ja4 count.
+             * PADDING (0015) is a dynamic extension that clients may or may
+             * not send, so excluding it keeps the fingerprint stable. */
+            if (strcmp(ext, "0015") != 0) {
+                ja4->extensions_count++;
+            }
 
             /* JA4ONE count: exclude PSK (0029) and PADDING (0015) */
             if (!ngx_ssl_ja4_is_ext_dynamic(c->ssl->extensions[i])) {
                 ja4->extensions_count_no_psk++;
             }
 
-            /* JA4O count: exclude only PSK (0029), keep PADDING (0015) */
-            if (!ngx_ssl_ja4_is_ext_psk(c->ssl->extensions[i])) {
+            /* JA4O count: exclude PSK (0029) and PADDING (0015) */
+            if (!ngx_ssl_ja4_is_ext_psk(c->ssl->extensions[i])
+                && strcmp(ext, "0015") != 0) {
                 ja4->extensions_count_ja4o++;
             }
 
@@ -356,45 +361,11 @@ int ngx_ssl_ja4(ngx_connection_t *c, ngx_pool_t *pool, ngx_ssl_ja4_t *ja4)
 
 
     /* Signature Algorithms
-     * Guard: only compute once per connection — prevents overwriting with a
-     * stale 0 if SSL_get_sigalgs is called again after the first successful
-     * call (each nginx variable triggers ngx_ssl_ja4 independently). */
-
-    if (c->ssl->sigalgs_hash_values == NULL) {
-        int num_sigalgs = SSL_get_sigalgs(ssl, 0, NULL, NULL, NULL, NULL, NULL);
-
-        if (num_sigalgs > 0) {
-            char **sigalgs_hex_strings = ngx_pnalloc(c->pool, num_sigalgs * sizeof(char *));
-            if (sigalgs_hex_strings == NULL) {
-                ngx_log_error(NGX_LOG_ERR, c->log, -1, "Failed to allocate memory.");
-                return NGX_ERROR;
-            }
-
-            for (int i = 0; i < num_sigalgs; ++i) {
-
-                int psign, phash, psignhash;
-                unsigned char rsig, rhash;
-                SSL_get_sigalgs(ssl, i, &psign, &phash, &psignhash, &rsig, &rhash);
-
-                char hex_string[5];
-                ngx_sprintf((u_char *)&hex_string[0], "%02xd%02xd", rhash, rsig);
-                hex_string[4] = '\0';
-
-                sigalgs_hex_strings[i] = ngx_pnalloc(c->pool, sizeof(hex_string));
-                if (sigalgs_hex_strings[i] == NULL) {
-                    ngx_log_error(NGX_LOG_ERR, c->log, -1, "Failed to allocate memory");
-                    return NGX_ERROR;
-                }
-
-                ngx_memcpy(sigalgs_hex_strings[i], hex_string, sizeof(hex_string));
-            }
-
-            c->ssl->sigalgs_hash_values = sigalgs_hex_strings;
-            c->ssl->sigalgs_sz = num_sigalgs;
-        } else {
-            c->ssl->sigalgs_sz = 0;
-        }
-    }
+     * Sigalgs are now parsed from the raw ClientHello in
+     * ngx_ssl_parse_client_hello_extensions() at handshake time, stored in
+     * c->ssl->sigalgs_hash_values and c->ssl->sigalgs_sz.  This avoids the
+     * timing dependency on SSL_get_sigalgs() which could return 0 in certain
+     * TLS 1.3 / early-data / session-resumption scenarios. */
 
     // signature algorithms
     ja4->sigalgs = NULL;

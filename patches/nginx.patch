@@ -12,6 +12,8 @@ index defffa583..7258d8a39 100644
 +    sc->client_hello_parsed = 0;
 +    sc->raw_client_hello = NULL;
 +    sc->raw_client_hello_len = 0;
++    sc->sigalgs_hash_values = NULL;
++    sc->sigalgs_sz = 0;
 +
 +    // Set up message callback to capture raw ClientHello
 +    // This must be done before the handshake starts
@@ -249,6 +251,43 @@ index defffa583..7258d8a39 100644
 +                    ngx_log_debug1(NGX_LOG_DEBUG_EVENT, c->log, 0,
 +                                  "Highest TLS version from supported_versions: 0x%04xd",
 +                                  highest);
++                }
++            }
++        }
++
++        // Check for signature_algorithms extension (0x000d)
++        // Parse directly from raw ClientHello to avoid SSL_get_sigalgs() timing issues
++        if (ext_type == 0x000d && ext_len >= 2 && c->ssl->sigalgs_hash_values == NULL) {
++            const u_char *sa = p;
++            size_t sa_list_len = (sa[0] << 8) | sa[1];
++
++            if (sa_list_len + 2 <= ext_len && sa_list_len >= 2) {
++                const u_char *sa_data = sa + 2;
++                size_t num_sigalgs = sa_list_len / 2;
++
++                char **sigalgs_hex = ngx_pnalloc(c->pool, num_sigalgs * sizeof(char *));
++                if (sigalgs_hex != NULL) {
++                    size_t valid = 0;
++                    for (size_t j = 0; j + 1 < sa_list_len; j += 2) {
++                        // Each sigalg is 2 bytes: hash_alg (1 byte) + sig_alg (1 byte)
++                        unsigned char hash_alg = sa_data[j];
++                        unsigned char sig_alg  = sa_data[j + 1];
++
++                        char *hex_buf = ngx_pnalloc(c->pool, 5);
++                        if (hex_buf == NULL) {
++                            break;
++                        }
++                        snprintf(hex_buf, 5, "%02x%02x", hash_alg, sig_alg);
++                        sigalgs_hex[valid++] = hex_buf;
++                    }
++
++                    if (valid > 0) {
++                        c->ssl->sigalgs_hash_values = sigalgs_hex;
++                        c->ssl->sigalgs_sz = valid;
++                        ngx_log_debug1(NGX_LOG_DEBUG_EVENT, c->log, 0,
++                                      "Parsed %uz signature algorithms from ClientHello",
++                                      valid);
++                    }
 +                }
 +            }
 +        }
