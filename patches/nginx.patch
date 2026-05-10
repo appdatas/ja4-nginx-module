@@ -384,9 +384,9 @@ index fe5107fb6..4ce964c2e 100644
 --- a/src/event/ngx_event_openssl.h
 +++ b/src/event/ngx_event_openssl.h
 @@ -151,6 +151,30 @@ struct ngx_ssl_connection_s {
-     unsigned                    in_ocsp:1;
      unsigned                    early_preread:1;
      unsigned                    write_blocked:1;
+     unsigned                    sni_accepted:1;
 +
 +    // ja4
 +    int             version;
@@ -428,8 +428,30 @@ diff --git a/src/event/quic/ngx_event_quic_ssl.c b/src/event/quic/ngx_event_quic
 index ba0b5929f..3227d76ca 100644
 --- a/src/event/quic/ngx_event_quic_ssl.c
 +++ b/src/event/quic/ngx_event_quic_ssl.c
-@@ -407,6 +407,74 @@ ngx_quic_crypto_input(ngx_connection_t *c, ngx_chain_t *data,
-     for (cl = data; cl; cl = cl->next) {
+@@ -697,6 +697,9 @@ ngx_quic_handshake(ngx_connection_t *c)
+ 
+     ssl_conn = c->ssl->connection;
+ 
++    /* ja4: Setting up a callback to collect TLS extensions */
++    SSL_CTX_set_client_hello_cb (c->ssl->session_ctx, ngx_SSL_early_cb_fn, c);
++
+     n = SSL_do_handshake(ssl_conn);
+ 
+     ngx_log_debug1(NGX_LOG_DEBUG_EVENT, c->log, 0, "SSL_do_handshake: %d", n);
+@@ -748,6 +751,11 @@ ngx_quic_handshake(ngx_connection_t *c)
+ 
+     c->ssl->handshaked = 1;
+ 
++    // Parse raw ClientHello to get all extensions including ECH and ALPS (QUIC)
++    if (c->ssl->client_hello_parsed && c->ssl->extensions_sz == 0) {
++        ngx_ssl_parse_client_hello_extensions(c);
++    }
++
+     frame = ngx_quic_alloc_frame(c);
+     if (frame == NULL) {
+         return NGX_ERROR;
+@@ -831,6 +839,74 @@ ngx_quic_crypto_provide(ngx_connection_t *c, ngx_uint_t level)
+     for (cl = out; cl; cl = cl->next) {
          b = cl->buf;
  
 +        // QUIC: Accumulate ClientHello from CRYPTO frames
@@ -500,31 +522,9 @@ index ba0b5929f..3227d76ca 100644
 +            }
 +        }
 +
-         if (!SSL_provide_quic_data(ssl_conn, level, b->pos, b->last - b->pos)) {
-             ngx_ssl_error(NGX_LOG_INFO, c->log, 0,
-                           "SSL_provide_quic_data() failed");
-@@ -414,6 +482,9 @@ ngx_quic_crypto_input(ngx_connection_t *c, ngx_chain_t *data,
-         }
-     }
- 
-+    /* ja4: Setting up a callback to collect TLS extensions */
-+    SSL_CTX_set_client_hello_cb (c->ssl->session_ctx, ngx_SSL_early_cb_fn, c);
-+
-     n = SSL_do_handshake(ssl_conn);
- 
-     ngx_log_debug1(NGX_LOG_DEBUG_EVENT, c->log, 0, "SSL_do_handshake: %d", n);
-@@ -456,6 +527,11 @@ ngx_quic_crypto_input(ngx_connection_t *c, ngx_chain_t *data,
- 
-     c->ssl->handshaked = 1;
- 
-+    // Parse raw ClientHello to get all extensions including ECH and ALPS (QUIC)
-+    if (c->ssl->client_hello_parsed && c->ssl->extensions_sz == 0) {
-+        ngx_ssl_parse_client_hello_extensions(c);
-+    }
-+
-     frame = ngx_quic_alloc_frame(c);
-     if (frame == NULL) {
-         return NGX_ERROR;
+         if (!SSL_provide_quic_data(c->ssl->connection, ssl_level, b->pos,
+                                    b->last - b->pos))
+         {
 diff --git a/src/http/modules/ngx_http_ssl_module.c b/src/http/modules/ngx_http_ssl_module.c
 index 320d1ee04..7fbbe4f21 100644
 --- a/src/http/modules/ngx_http_ssl_module.c
