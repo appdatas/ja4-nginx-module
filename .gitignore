@@ -11,3 +11,6 @@ __pycache__/
 *.py[cod]
 *$py.class
 .pytest_cache/
+
+# Test::Nginx runtime tree
+t/servroot/

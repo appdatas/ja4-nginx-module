@@ -27,7 +27,52 @@ You can also build from source with:
 
 ## Testing
 
-Integration tests run inside Docker and validate the module’s behavior against predefined scenarios using golden files in `testdata/`.
+There are two complementary suites:
+
+| Suite | Path | Framework | What it covers |
+|-------|------|-----------|----------------|
+| OpenResty-style | `t/` | [Test::Nginx](https://github.com/openresty/test-nginx) + `prove` | Module load, config/variables, plain-HTTP safety, JA4H (planned) |
+| Integration / TLS | `test/` | `pytest` + Docker | JA4 fingerprint goldens, ClientHello edge cases (curl, uTLS, curl_cffi) |
+
+### OpenResty-style tests (`t/`)
+
+OpenResty-style cases live under `t/*.t`. Each case embeds a small nginx config, starts nginx, issues a request with the default Test::Nginx client (Perl `IO::Socket`, plain HTTP/1.1), and asserts on the response.
+
+**Requirements**
+
+- nginx built with this module (and the required core patch)
+- Perl modules: `Test::Nginx` (and dependencies)
+
+```bash
+# example: local install of Test::Nginx
+cpanm --local-lib=~/perl5 Test::Nginx
+export PERL5LIB=$HOME/perl5/lib/perl5${PERL5LIB:+:$PERL5LIB}
+```
+
+**Run**
+
+```bash
+export TEST_NGINX_BINARY=/path/to/nginx   # binary built with this module
+prove -v t/
+# or a single file:
+prove -v t/00-sanity.t
+```
+
+**Dump the HTTP response on success**
+
+```bash
+TEST_NGINX_VERBOSE=1 prove -v t/00-sanity.t
+```
+
+Current files:
+
+- `t/00-sanity.t` — module loads (`$http_ssl_ja4h`), SSL JA4 vars empty and safe on plain HTTP
+
+Runtime tree `t/servroot/` is created by Test::Nginx and is gitignored.
+
+### Integration tests (`test/`)
+
+Integration tests run against Docker and validate the module’s TLS fingerprinting against predefined scenarios using golden files in `test/testdata/`.
 
 Run tests:
 
