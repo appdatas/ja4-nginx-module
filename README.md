@@ -56,12 +56,12 @@ To develop and debug the Dockerfile container, I find it useful to run docker wi
 
 ## Developer Guide
 
-Build against official nginx: apply `patches/nginx.patch` to the nginx source tree, then configure with `--add-module=/path/to/ja4-nginx-module/src`.
+Build against official nginx: apply `patches/nginx.patch` to the nginx source tree, then configure with `--add-module=/path/to/ja4-nginx-module`.
 
 ```bash
 cd nginx-${NGINX_VERSION}
 patch -p1 < /path/to/ja4-nginx-module/patches/nginx.patch
-./configure --add-module=/path/to/ja4-nginx-module/src --with-http_ssl_module ...
+./configure --add-module=/path/to/ja4-nginx-module --with-http_ssl_module ...
 make && make install
 ```
 
