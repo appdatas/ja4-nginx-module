@@ -1,14 +1,20 @@
 # vi:filetype=perl
-# OpenResty-style sanity tests for ngx_http_ssl_ja4_module.
+# Test::Nginx tests for ngx_http_ssl_ja4_module.
 #
 # Client: Test::Nginx default (Perl IO::Socket, plain HTTP/1.1).
 # Scope: module load, plain-HTTP safety when JA4 variables are referenced.
-# Not covered here: TLS ClientHello / JA4 golden fingerprints (see test/).
+# Not covered here: TLS ClientHello / JA4 golden fingerprints (see test/*.py).
 #
 # Run (requires nginx built with this module + Test::Nginx):
 #   export TEST_NGINX_BINARY=/path/to/nginx
 #   export PERL5LIB=$HOME/perl5/lib/perl5${PERL5LIB:+:$PERL5LIB}
-#   prove -v t/00-sanity.t
+#   export TEST_NGINX_SERVROOT=$PWD/test/servroot
+#   prove -v test/plain-http-variables.t
+
+BEGIN {
+    use File::Spec;
+    $ENV{TEST_NGINX_SERVROOT} ||= File::Spec->rel2abs('test/servroot');
+}
 
 use Test::Nginx::Socket 'no_plan';
 

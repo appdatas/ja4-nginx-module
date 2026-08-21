@@ -31,12 +31,12 @@ There are two complementary suites:
 
 | Suite | Path | Framework | What it covers |
 |-------|------|-----------|----------------|
-| OpenResty-style | `t/` | [Test::Nginx](https://github.com/openresty/test-nginx) + `prove` | Module load, config/variables, plain-HTTP safety, JA4H (planned) |
-| Integration / TLS | `test/` | `pytest` + Docker | JA4 fingerprint goldens, ClientHello edge cases (curl, uTLS, curl_cffi) |
+| Test::Nginx | `test/*.t` | [Test::Nginx](https://github.com/openresty/test-nginx) + `prove` | Module load, config/variables, plain-HTTP safety, JA4H (planned) |
+| Integration / TLS | `test/*.py` | `pytest` + Docker | JA4 fingerprint goldens, ClientHello edge cases (curl, uTLS, curl_cffi) |
 
-### OpenResty-style tests (`t/`)
+### Test::Nginx tests (`test/*.t`)
 
-OpenResty-style cases live under `t/*.t`. Each case embeds a small nginx config, starts nginx, issues a request with the default Test::Nginx client (Perl `IO::Socket`, plain HTTP/1.1), and asserts on the response.
+Test::Nginx cases live under `test/*.t`. Each case embeds a small nginx config, starts nginx, issues a request with the default Test::Nginx client (Perl `IO::Socket`, plain HTTP/1.1), and asserts on the response.
 
 **Requirements**
 
@@ -53,24 +53,27 @@ export PERL5LIB=$HOME/perl5/lib/perl5${PERL5LIB:+:$PERL5LIB}
 
 ```bash
 export TEST_NGINX_BINARY=/path/to/nginx   # binary built with this module
-prove -v t/
+export TEST_NGINX_SERVROOT=$PWD/test/servroot
+prove -v test/*.t
 # or a single file:
-prove -v t/00-sanity.t
+prove -v test/plain-http-variables.t
 ```
+
+Test::Nginx writes its runtime tree to `t/servroot` unless `TEST_NGINX_SERVROOT` is set. The `.t` files default it to `test/servroot` so a bare `prove` does not recreate a top-level `t/` directory.
 
 **Dump the HTTP response on success**
 
 ```bash
-TEST_NGINX_VERBOSE=1 prove -v t/00-sanity.t
+TEST_NGINX_VERBOSE=1 prove -v test/plain-http-variables.t
 ```
 
 Current files:
 
-- `t/00-sanity.t` — module loads (`$http_ssl_ja4h`), SSL JA4 vars empty and safe on plain HTTP
+- `test/plain-http-variables.t` — module loads (`$http_ssl_ja4h`), SSL JA4 vars empty and safe on plain HTTP
 
-Runtime tree `t/servroot/` is created by Test::Nginx and is gitignored.
+Runtime tree `test/servroot/` is created by Test::Nginx and is gitignored.
 
-### Integration tests (`test/`)
+### Integration tests (`test/*.py`)
 
 Integration tests run against Docker and validate the module’s TLS fingerprinting against predefined scenarios using golden files in `test/testdata/`.
 
