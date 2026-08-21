@@ -101,7 +101,16 @@ To develop and debug the Dockerfile container, I find it useful to run docker wi
 
 ## Developer Guide
 
-If you want to develop this module, you should head to the [ja4-nginx fork](https://github.com/FoxIO-LLC/ja4-nginx). There, you can load this module into a fork of the nginx source code and build it.
+Build against official nginx: apply `patches/nginx.patch` to the nginx source tree, then configure with `--add-module=/path/to/ja4-nginx-module/src`.
+
+```bash
+cd nginx-${NGINX_VERSION}
+patch -p1 < /path/to/ja4-nginx-module/patches/nginx.patch
+./configure --add-module=/path/to/ja4-nginx-module/src --with-http_ssl_module ...
+make && make install
+```
+
+The root `Dockerfile` is a full reference build. See also Usage and Testing above for Docker and `pytest`.
 
 ## Creating a Release
 
