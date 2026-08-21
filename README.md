@@ -53,13 +53,12 @@ export PERL5LIB=$HOME/perl5/lib/perl5${PERL5LIB:+:$PERL5LIB}
 
 ```bash
 export TEST_NGINX_BINARY=/path/to/nginx   # binary built with this module
-export TEST_NGINX_SERVROOT=$PWD/test/servroot
 prove -v test/*.t
 # or a single file:
 prove -v test/plain-http-variables.t
 ```
 
-Test::Nginx writes its runtime tree to `t/servroot` unless `TEST_NGINX_SERVROOT` is set. The `.t` files default it to `test/servroot` so a bare `prove` does not recreate a top-level `t/` directory.
+`TEST_NGINX_SERVROOT` is optional. Each `.t` file defaults it to `test/servroot` so Test::Nginx does not write `t/servroot`. Set the variable only if you need a different path.
 
 **Dump the HTTP response on success**
 

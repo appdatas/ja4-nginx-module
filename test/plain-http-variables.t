@@ -8,8 +8,8 @@
 # Run (requires nginx built with this module + Test::Nginx):
 #   export TEST_NGINX_BINARY=/path/to/nginx
 #   export PERL5LIB=$HOME/perl5/lib/perl5${PERL5LIB:+:$PERL5LIB}
-#   export TEST_NGINX_SERVROOT=$PWD/test/servroot
 #   prove -v test/plain-http-variables.t
+# TEST_NGINX_SERVROOT is optional; defaults to test/servroot below.
 
 BEGIN {
     use File::Spec;
