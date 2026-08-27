@@ -1233,9 +1233,9 @@ ngx_ssl_ja4h(ngx_http_request_t *r, ngx_pool_t *pool, ngx_ssl_ja4h_t *ja4h)
     ngx_memset(ja4h->http_method, 0, 3);
     ngx_strlow((u_char *) ja4h->http_method, (u_char *) r->method_name.data, 2);
 
-    ngx_memset(ja4h->http_version, 0, 3);
-    ngx_snprintf((u_char *) ja4h->http_version, 2, "%d%d",
-                 r->http_version / 1000, r->http_version % 1000);
+    ja4h->http_version[0] = (char) ('0' + r->http_version / 1000);
+    ja4h->http_version[1] = (char) ('0' + r->http_version % 1000);
+    ja4h->http_version[2] = '\0';
 
     ja4h->cookie_presence = r->headers_in.cookie ? 'c' : 'n';
     ja4h->referrer_presence = r->headers_in.referer ? 'r' : 'n';
