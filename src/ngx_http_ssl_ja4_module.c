@@ -1191,13 +1191,27 @@ ngx_ssl_ja4h_push_cookie(ngx_pool_t *pool, ngx_array_t *list,
     return NGX_OK;
 }
 
+/* FoxIO / Wireshark sort by cookie name, not the full name=value pair.
+ * Cookie: a-b=1; a=2 must become a,a-b (not a-b,a): '-' sorts before '='. */
 static int ngx_libc_cdecl
 ngx_ssl_ja4h_cmp_cookie(const void *one, const void *two)
 {
     const ngx_ssl_ja4h_cookie_t *a = one;
     const ngx_ssl_ja4h_cookie_t *b = two;
+    size_t n;
+    int rc;
 
-    return compare_ngx_str(&a->pair, &b->pair);
+    n = ngx_min(a->name_len, b->name_len);
+    rc = ngx_strncmp(a->pair.data, b->pair.data, n);
+    if (rc != 0) {
+        return rc;
+    }
+
+    if (a->name_len == b->name_len) {
+        return 0;
+    }
+
+    return a->name_len < b->name_len ? -1 : 1;
 }
 
 // JA4H

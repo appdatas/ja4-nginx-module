@@ -241,13 +241,6 @@ static int compare_hexes(const void *a, const void *b)
     return 0;
 }
 
-static int ngx_libc_cdecl compare_ngx_str(const void *one, const void *two)
-{
-    ngx_str_t *a = (ngx_str_t *) one;
-    ngx_str_t *b = (ngx_str_t *) two;
-    return ngx_strncasecmp(a->data, b->data, a->len);
-}
-
 #if (NGX_DEBUG)
 static void
 ngx_ssl_ja4l_detail_print(ngx_pool_t *pool, ngx_ssl_ja4l_t *ja4l)
