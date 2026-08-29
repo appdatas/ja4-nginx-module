@@ -454,3 +454,40 @@ GET /t
 ^ja4h=ge11nn210000_e46fbdfb6ecf_000000000000_000000000000$
 --- no_error_log
 [error]
+
+
+
+=== TEST 24: ja4h_string_cookie_name_prefix_sort
+# Sort by cookie name, not the full pair. Cookie: a-b=1; a=2
+# Pair-sort would emit a-b,a because '-' < '='; name-sort emits a,a-b.
+--- config
+    location /t {
+        default_type text/plain;
+        return 200 "ja4h_string=$http_ssl_ja4h_string\n";
+    }
+--- more_headers
+Cookie: a-b=1; a=2
+--- request
+GET /t
+--- response_body_like chomp
+^ja4h_string=ge11cn020000_Host,Connection_a,a-b_a=2,a-b=1$
+--- no_error_log
+[error]
+
+
+
+=== TEST 25: ja4h_spec_cookie_name_prefix_sort
+# Same cookies as TEST 24, hashed: hash12("a,a-b") / hash12("a=2,a-b=1").
+--- config
+    location /t {
+        default_type text/plain;
+        return 200 "ja4h=$http_ssl_ja4h\n";
+    }
+--- more_headers
+Cookie: a-b=1; a=2
+--- request
+GET /t
+--- response_body_like chomp
+^ja4h=ge11cn020000_d5c75abc5c2c_474f0429a83d_8777147329fe$
+--- no_error_log
+[error]
