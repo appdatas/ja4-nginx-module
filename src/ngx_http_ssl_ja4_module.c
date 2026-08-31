@@ -137,8 +137,11 @@ int ngx_ssl_ja4(ngx_connection_t *c, ngx_pool_t *pool, ngx_ssl_ja4_t *ja4)
     if (!ssl) {
         return NGX_DECLINED;
     }
-
+#if (NGX_QUIC || NGX_COMPAT)
     ja4->transport = (c->quic) ? 'q' : 't';
+#else
+    ja4->transport = 't';
+#endif
     ja4->has_sni = SSL_get_servername (ssl, TLSEXT_NAMETYPE_host_name) ? 'd' : 'i';
     ja4->alpn_first_value = c->ssl->first_alpn;
 
