@@ -137,8 +137,11 @@ int ngx_ssl_ja4(ngx_connection_t *c, ngx_pool_t *pool, ngx_ssl_ja4_t *ja4)
     if (!ssl) {
         return NGX_DECLINED;
     }
-
+#if (NGX_QUIC || NGX_COMPAT)
     ja4->transport = (c->quic) ? 'q' : 't';
+#else
+    ja4->transport = 't';
+#endif
     ja4->has_sni = SSL_get_servername (ssl, TLSEXT_NAMETYPE_host_name) ? 'd' : 'i';
     ja4->alpn_first_value = c->ssl->first_alpn;
 
@@ -1214,6 +1217,81 @@ ngx_ssl_ja4h_cmp_cookie(const void *one, const void *two)
     return a->name_len < b->name_len ? -1 : 1;
 }
 
+/* FoxIO JA4H method codes (Wireshark packet-ja4.c http_method_map).
+ * Unknown methods that still parse (e.g. FOO) use "00". */
+static const struct {
+    ngx_str_t  method;
+    u_char     code[2];
+} ngx_ssl_ja4h_method_map[] = {
+    { ngx_string("ACL"),               { 'a', 'c' } },
+    { ngx_string("BASELINE-CONTROL"),  { 'b', 'a' } },
+    { ngx_string("BIND"),              { 'b', 'i' } },
+    { ngx_string("CHECKIN"),           { 'c', 'n' } },
+    { ngx_string("CHECKOUT"),          { 'c', 't' } },
+    { ngx_string("CONNECT"),           { 'c', 'o' } },
+    { ngx_string("COPY"),              { 'c', 'y' } },
+    { ngx_string("DELETE"),            { 'd', 'e' } },
+    { ngx_string("GET"),               { 'g', 'e' } },
+    { ngx_string("HEAD"),              { 'h', 'e' } },
+    { ngx_string("LABEL"),             { 'l', 'a' } },
+    { ngx_string("LINK"),              { 'l', 'i' } },
+    { ngx_string("LOCK"),              { 'l', 'o' } },
+    { ngx_string("MERGE"),             { 'm', 'e' } },
+    { ngx_string("MKACTIVITY"),        { 'm', 'a' } },
+    { ngx_string("MKCALENDAR"),        { 'm', 'c' } },
+    { ngx_string("MKCOL"),             { 'm', 'l' } },
+    { ngx_string("MKREDIRECTREF"),     { 'm', 'r' } },
+    { ngx_string("MKWORKSPACE"),       { 'm', 'w' } },
+    { ngx_string("MOVE"),              { 'm', 'o' } },
+    { ngx_string("M-SEARCH"),          { 'm', 's' } },
+    { ngx_string("NOTIFY"),            { 'n', 'o' } },
+    { ngx_string("OPTIONS"),           { 'o', 'p' } },
+    { ngx_string("PATCH"),             { 'p', 'a' } },
+    { ngx_string("POST"),              { 'p', 'o' } },
+    { ngx_string("PRI"),               { 'p', 'r' } },
+    { ngx_string("PROPFIND"),          { 'p', 'f' } },
+    { ngx_string("PROPPATCH"),         { 'p', 'p' } },
+    { ngx_string("PURGE"),             { 'p', 'r' } },
+    { ngx_string("PUT"),               { 'p', 'u' } },
+    { ngx_string("REBIND"),            { 'r', 'b' } },
+    { ngx_string("REPORT"),            { 'r', 'p' } },
+    { ngx_string("SEARCH"),            { 's', 'e' } },
+    { ngx_string("SUBSCRIBE"),         { 's', 'u' } },
+    { ngx_string("TRACE"),             { 't', 'r' } },
+    { ngx_string("UNBIND"),            { 'u', 'b' } },
+    { ngx_string("UNCHECKOUT"),        { 'u', 'c' } },
+    { ngx_string("UNLINK"),            { 'u', 'i' } },
+    { ngx_string("UNLOCK"),            { 'u', 'o' } },
+    { ngx_string("UNSUBSCRIBE"),       { 'u', 'n' } },
+    { ngx_string("UPDATE"),            { 'u', 'p' } },
+    { ngx_string("UPDATEREDIRECTREF"), { 'u', 'r' } },
+    { ngx_string("VERSION-CONTROL"),   { 'v', 'e' } },
+};
+
+static void
+ngx_ssl_ja4h_method_code(ngx_str_t *method_name, char *out)
+{
+    size_t  i;
+
+    out[0] = '0';
+    out[1] = '0';
+    out[2] = '\0';
+
+    for (i = 0; i < sizeof(ngx_ssl_ja4h_method_map)
+                    / sizeof(ngx_ssl_ja4h_method_map[0]); i++)
+    {
+        if (method_name->len == ngx_ssl_ja4h_method_map[i].method.len
+            && ngx_strncasecmp(method_name->data,
+                               ngx_ssl_ja4h_method_map[i].method.data,
+                               method_name->len) == 0)
+        {
+            out[0] = ngx_ssl_ja4h_method_map[i].code[0];
+            out[1] = ngx_ssl_ja4h_method_map[i].code[1];
+            return;
+        }
+    }
+}
+
 // JA4H
 int
 ngx_ssl_ja4h(ngx_http_request_t *r, ngx_pool_t *pool, ngx_ssl_ja4h_t *ja4h)
@@ -1223,15 +1301,8 @@ ngx_ssl_ja4h(ngx_http_request_t *r, ngx_pool_t *pool, ngx_ssl_ja4h_t *ja4h)
 
     ngx_memzero(ja4h, sizeof(ngx_ssl_ja4h_t));
 
-    if (r->method_name.len < 2) {
-        ngx_log_error(NGX_LOG_ALERT, r->connection->log, 0,
-                      "JA4H failed: Unknown request method");
-        return NGX_DECLINED;
-    }
-
     // JA4H_a
-    ngx_memset(ja4h->http_method, 0, 3);
-    ngx_strlow((u_char *) ja4h->http_method, (u_char *) r->method_name.data, 2);
+    ngx_ssl_ja4h_method_code(&r->method_name, ja4h->http_method);
 
     ja4h->http_version[0] = (char) ('0' + r->http_version / 1000);
     ja4h->http_version[1] = (char) ('0' + r->http_version % 1000);
