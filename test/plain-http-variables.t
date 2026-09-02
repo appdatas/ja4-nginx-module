@@ -837,3 +837,42 @@ GET /t
 ^ja4h=ge11nn03es34_6fe3288294a7_000000000000_000000000000$
 --- no_error_log
 [error]
+
+
+
+=== TEST 47: ja4h_accept_language_first_wins
+# Two Accept-Language headers: first * (2a00) is kept; en-US must not overwrite.
+# Count 04; b = hash12("Host,Connection,Accept-Language,Accept-Language").
+--- config
+    location /t {
+        default_type text/plain;
+        return 200 "ja4h=$http_ssl_ja4h\n";
+    }
+--- more_headers
+Accept-Language: *
+Accept-Language: en-US
+--- request
+GET /t
+--- response_body_like chomp
+^ja4h=ge11nn042a00_1c4a19f94e87_000000000000_000000000000$
+--- no_error_log
+[error]
+
+
+
+=== TEST 48: ja4h_accept_language_empty_first_wins
+# Empty first header still counts as set (0000); later en must not fill it.
+--- config
+    location /t {
+        default_type text/plain;
+        return 200 "ja4h=$http_ssl_ja4h\n";
+    }
+--- more_headers
+Accept-Language:
+Accept-Language: en
+--- request
+GET /t
+--- response_body_like chomp
+^ja4h=ge11nn040000_1c4a19f94e87_000000000000_000000000000$
+--- no_error_log
+[error]

@@ -1339,6 +1339,7 @@ ngx_ssl_ja4h(ngx_http_request_t *r, ngx_pool_t *pool, ngx_ssl_ja4h_t *ja4h)
 {
     ngx_ssl_ja4h_cookie_t *cookie;
     size_t i;
+    ngx_uint_t lang_set = 0;
 
     ngx_memzero(ja4h, sizeof(ngx_ssl_ja4h_t));
 
@@ -1370,13 +1371,14 @@ ngx_ssl_ja4h(ngx_http_request_t *r, ngx_pool_t *pool, ngx_ssl_ja4h_t *ja4h)
             header_item = headers_part->elts;
             i = 0;
         }
-        if ((ja4h->primary_accept_language[0] == '0')
+        if (!lang_set
             && (header_item[i].key.len == sizeof("Accept-Language") - 1)
             && (ngx_strncasecmp(header_item[i].key.data, (u_char *) "Accept-Language",
                                 sizeof("Accept-Language") - 1) == 0))
         {
             ngx_ssl_ja4h_decode_http_lang(&header_item[i].value,
                                           ja4h->primary_accept_language);
+            lang_set = 1;
         }
 
         if (ngx_ssl_ja4h_is_cookie_or_referer(&header_item[i])) {
