@@ -1126,6 +1126,47 @@ ngx_ssl_ja4h_is_cookie_or_referer(ngx_table_elt_t *h)
     return 0;
 }
 
+/* JA4H language field: FoxIO Wireshark decode_http_lang.
+ * Skip whitespace and '-'; stop at ',' / ';'. ASCII letters are lowercased;
+ * any other byte (including digits) is two lowercase hex digits. Digits are
+ * encoded so they are not confused with hex nibbles (FoxIO-LLC/ja4#230).
+ * Right-pad with '0' to 4 chars. */
+static void
+ngx_ssl_ja4h_decode_http_lang(ngx_str_t *val, char *out)
+{
+    static const u_char hex[] = "0123456789abcdef";
+    size_t i, n;
+
+    ngx_memcpy(out, "0000", 5);
+
+    for (i = 0, n = 0; n < 4 && i < val->len; i++) {
+        u_char c = val->data[i];
+
+        if (c == ',' || c == ';') {
+            break;
+        }
+
+        if (c == '-' || c == ' ' || c == '\t' || c == '\n' || c == '\r'
+            || c == '\f' || c == '\v')
+        {
+            continue;
+        }
+
+        if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')) {
+            out[n++] = (char) ngx_tolower(c);
+            continue;
+        }
+
+        /* Non-alpha, including digits: two lowercase hex digits. */
+        if (n < 4) {
+            out[n++] = (char) hex[(c >> 4) & 0x0F];
+        }
+        if (n < 4) {
+            out[n++] = (char) hex[c & 0x0F];
+        }
+    }
+}
+
 /* FoxIO hash12: 12 hex chars of SHA-256; empty input is 000000000000, not SHA256(""). */
 static ngx_int_t
 ngx_ssl_ja4h_hash12(ngx_str_t *in, char *out)
@@ -1298,6 +1339,7 @@ ngx_ssl_ja4h(ngx_http_request_t *r, ngx_pool_t *pool, ngx_ssl_ja4h_t *ja4h)
 {
     ngx_ssl_ja4h_cookie_t *cookie;
     size_t i;
+    ngx_uint_t lang_set = 0;
 
     ngx_memzero(ja4h, sizeof(ngx_ssl_ja4h_t));
 
@@ -1311,8 +1353,7 @@ ngx_ssl_ja4h(ngx_http_request_t *r, ngx_pool_t *pool, ngx_ssl_ja4h_t *ja4h)
     ja4h->cookie_presence = r->headers_in.cookie ? 'c' : 'n';
     ja4h->referrer_presence = r->headers_in.referer ? 'r' : 'n';
 
-    // First 4 Accept-Language chars: skip '-', stop at ',' or ';', lowercased.
-    // Missing or short values stay/pad as 0000.
+    // First 4 language chars via decode_http_lang; missing/short stay/pad 0000.
     ngx_memcpy(ja4h->primary_accept_language, "0000", 5);
 
     // JA4H_b: comma-joined header names with Cookie/Referer dropped, then hash that buffer.
@@ -1330,24 +1371,14 @@ ngx_ssl_ja4h(ngx_http_request_t *r, ngx_pool_t *pool, ngx_ssl_ja4h_t *ja4h)
             header_item = headers_part->elts;
             i = 0;
         }
-        if ((ja4h->primary_accept_language[0] == '0')
+        if (!lang_set
             && (header_item[i].key.len == sizeof("Accept-Language") - 1)
             && (ngx_strncasecmp(header_item[i].key.data, (u_char *) "Accept-Language",
                                 sizeof("Accept-Language") - 1) == 0))
         {
-            size_t idx, c;
-
-            for (c = 0, idx = 0; idx < 4 && c < header_item[i].value.len; c++) {
-                if (header_item[i].value.data[c] == '-') {
-                    continue;
-                } else if (header_item[i].value.data[c] == ','
-                           || header_item[i].value.data[c] == ';')
-                {
-                    break;
-                }
-                ja4h->primary_accept_language[idx++] =
-                    ngx_tolower(header_item[i].value.data[c]);
-            }
+            ngx_ssl_ja4h_decode_http_lang(&header_item[i].value,
+                                          ja4h->primary_accept_language);
+            lang_set = 1;
         }
 
         if (ngx_ssl_ja4h_is_cookie_or_referer(&header_item[i])) {

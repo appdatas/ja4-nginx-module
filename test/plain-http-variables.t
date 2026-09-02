@@ -155,7 +155,7 @@ hello
 
 
 === TEST 8: ja4h_accept_language
-# Primary Accept-Language: skip hyphens, first 4 alphanumerics, lowercased
+# Primary Accept-Language: skip hyphens/whitespace, first 4 letters lowercased
 # (en-US -> enus). Accept-Language is counted (baseline 02 -> 03).
 --- config
     location /t {
@@ -311,7 +311,7 @@ PUT /t
 
 
 === TEST 17: ja4h_accept_language_short
-# Accept-Language "en" pads to en00 (first 4 alphanumerics, right-padded).
+# Accept-Language "en" pads to en00 (first 4 letters, right-padded).
 --- config
     location /t {
         default_type text/plain;
@@ -403,7 +403,7 @@ GET /t
 
 
 === TEST 22: ja4h_accept_language_truncated
-# More than 4 kept chars: english -> engl.
+# More than 4 kept letters: english -> engl.
 --- config
     location /t {
         default_type text/plain;
@@ -763,5 +763,116 @@ FOO-BAR /t
 FOO_BAR /t
 --- response_body_like chomp
 ^ja4h=0011nn
+--- no_error_log
+[error]
+
+
+
+=== TEST 43: ja4h_accept_language_wildcard
+# Non-alpha '*' (0x2a) encodes as two lowercase hex digits, then padded: 2a00.
+--- config
+    location /t {
+        default_type text/plain;
+        return 200 "ja4h=$http_ssl_ja4h\n";
+    }
+--- more_headers
+Accept-Language: *
+--- request
+GET /t
+--- response_body_like chomp
+^ja4h=ge11nn032a00_6fe3288294a7_000000000000_000000000000$
+--- no_error_log
+[error]
+
+
+
+=== TEST 44: ja4h_accept_language_wildcard_q
+# Separator ';' stops before the q-value: *;q=0.5 -> 2a00.
+--- config
+    location /t {
+        default_type text/plain;
+        return 200 "ja4h=$http_ssl_ja4h\n";
+    }
+--- more_headers
+Accept-Language: *;q=0.5
+--- request
+GET /t
+--- response_body_like chomp
+^ja4h=ge11nn032a00_6fe3288294a7_000000000000_000000000000$
+--- no_error_log
+[error]
+
+
+
+=== TEST 45: ja4h_accept_language_wildcard_list
+# Comma stops after the primary value: *,en -> 2a00.
+--- config
+    location /t {
+        default_type text/plain;
+        return 200 "ja4h=$http_ssl_ja4h\n";
+    }
+--- more_headers
+Accept-Language: *,en
+--- request
+GET /t
+--- response_body_like chomp
+^ja4h=ge11nn032a00_6fe3288294a7_000000000000_000000000000$
+--- no_error_log
+[error]
+
+
+
+=== TEST 46: ja4h_accept_language_digit
+# Digits are hex-encoded (FoxIO ja4#230): es-419 skips '-', '4' -> 34, cap: es34.
+--- config
+    location /t {
+        default_type text/plain;
+        return 200 "ja4h=$http_ssl_ja4h\n";
+    }
+--- more_headers
+Accept-Language: es-419
+--- request
+GET /t
+--- response_body_like chomp
+^ja4h=ge11nn03es34_6fe3288294a7_000000000000_000000000000$
+--- no_error_log
+[error]
+
+
+
+=== TEST 47: ja4h_accept_language_first_wins
+# Two Accept-Language headers: first * (2a00) is kept; en-US must not overwrite.
+# Count 04; b = hash12("Host,Connection,Accept-Language,Accept-Language").
+--- config
+    location /t {
+        default_type text/plain;
+        return 200 "ja4h=$http_ssl_ja4h\n";
+    }
+--- more_headers
+Accept-Language: *
+Accept-Language: en-US
+--- request
+GET /t
+--- response_body_like chomp
+^ja4h=ge11nn042a00_1c4a19f94e87_000000000000_000000000000$
+--- no_error_log
+[error]
+
+
+
+=== TEST 48: ja4h_accept_language_empty_first_wins
+# Empty first header still counts as set (0000); later en must not fill it.
+--- config
+    location /t {
+        default_type text/plain;
+        return 200 "ja4h=$http_ssl_ja4h\n";
+    }
+--- more_headers
+Accept-Language:
+Accept-Language: en
+--- request
+GET /t
+--- response_body_like chomp
+^ja4h=ge11nn040000_1c4a19f94e87_000000000000_000000000000$
 --- no_error_log
 [error]
