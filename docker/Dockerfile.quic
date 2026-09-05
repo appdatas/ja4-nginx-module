@@ -33,7 +33,7 @@ RUN wget https://github.com/FoxIO-LLC/ja4-nginx-module/releases/download/${VERSI
 RUN patch -p1 < ja4-nginx-module-${VERSION}/patches/nginx.patch
 
 # Build Nginx
-RUN ./configure --with-debug --with-compat --add-module=/tmp/nginx-${NGINX_VERSION}/ja4-nginx-module-${VERSION}/src --with-http_ssl_module --prefix=/etc/nginx && \
+RUN ./configure --with-debug --with-compat --add-module=/tmp/nginx-${NGINX_VERSION}/ja4-nginx-module-${VERSION} --with-http_ssl_module --prefix=/etc/nginx && \
     make && \
     make install
 

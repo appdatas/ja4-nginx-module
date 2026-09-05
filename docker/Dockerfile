@@ -43,7 +43,7 @@ WORKDIR /tmp/nginx-${NGINX_VERSION}
 RUN patch -p1 < /tmp/ja4-nginx-module-${JA4_MODULE_VERSION}/patches/nginx.patch
 
 # Build Nginx
-RUN ./configure --with-openssl=/tmp/openssl-${OPENSSL_VERSION} --with-debug --with-compat --add-module=/tmp/ja4-nginx-module-${JA4_MODULE_VERSION}/src --with-http_ssl_module --prefix=/etc/nginx && \
+RUN ./configure --with-openssl=/tmp/openssl-${OPENSSL_VERSION} --with-debug --with-compat --add-module=/tmp/ja4-nginx-module-${JA4_MODULE_VERSION} --with-http_ssl_module --prefix=/etc/nginx && \
     make && \
     make install
 

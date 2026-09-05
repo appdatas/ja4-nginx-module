@@ -1,0 +1,59 @@
+name: Test::Nginx
+
+on: pull_request
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    env:
+      NGINX_VERSION: "1.30.4"
+      BUILD_DIR: /tmp/build
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            libpcre2-dev \
+            libssl-dev \
+            zlib1g-dev \
+            perl \
+            cpanminus \
+            wget \
+            patch
+          sudo cpanm --notest Test::Nginx
+
+      - name: Download nginx
+        run: |
+          set -euo pipefail
+          mkdir -p "${BUILD_DIR}"
+          cd "${BUILD_DIR}"
+          wget -q "https://nginx.org/download/nginx-${NGINX_VERSION}.tar.gz"
+          tar -zxf "nginx-${NGINX_VERSION}.tar.gz"
+
+      - name: Apply nginx.patch
+        run: |
+          set -euo pipefail
+          patch -p1 -d "${BUILD_DIR}/nginx-${NGINX_VERSION}" \
+            < "${GITHUB_WORKSPACE}/patches/nginx.patch"
+
+      - name: Build nginx with JA4 module
+        run: |
+          set -euo pipefail
+          cd "${BUILD_DIR}/nginx-${NGINX_VERSION}"
+          ./configure \
+            --with-debug \
+            --add-module="${GITHUB_WORKSPACE}" \
+            --with-http_ssl_module
+          make -j"$(nproc)"
+
+      - name: Run Test::Nginx
+        run: |
+          export TEST_NGINX_BINARY="${BUILD_DIR}/nginx-${NGINX_VERSION}/objs/nginx"
+          prove -v test/*.t

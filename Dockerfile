@@ -35,14 +35,14 @@ RUN wget https://nginx.org/download/nginx-${NGINX_VERSION}.tar.gz && \
 RUN wget https://github.com/openssl/openssl/releases/download/openssl-${OPENSSL_VERSION}/openssl-${OPENSSL_VERSION}.tar.gz && \
     tar -zxf openssl-${OPENSSL_VERSION}.tar.gz
 
-COPY src/config /tmp/ja4-nginx-module/src/config
+COPY config /tmp/ja4-nginx-module/config
 COPY src/ngx_http_ssl_ja4_module.c.dummy /tmp/ja4-nginx-module/src/ngx_http_ssl_ja4_module.c
 
 WORKDIR /tmp/nginx-${NGINX_VERSION}
 RUN ./configure \
       --with-openssl=/tmp/openssl-${OPENSSL_VERSION} \
       --with-debug --with-compat \
-      --add-module=/tmp/ja4-nginx-module/src \
+      --add-module=/tmp/ja4-nginx-module \
       --with-http_ssl_module \
       --with-http_v2_module \
       --with-http_v3_module \
