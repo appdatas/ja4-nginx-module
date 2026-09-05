@@ -307,12 +307,9 @@ int ngx_ssl_ja4(ngx_connection_t *c, ngx_pool_t *pool, ngx_ssl_ja4_t *ja4)
             char *ext = (char *)c->ssl->extensions[i];
             size_t ext_len = strlen(ext) + 1;
 
-            /* All non-GREASE, non-PADDING extensions contribute to ja4 count.
-             * PADDING (0015) is a dynamic extension that clients may or may
-             * not send, so excluding it keeps the fingerprint stable. */
-            if (strcmp(ext, "0015") != 0) {
-                ja4->extensions_count++;
-            }
+            /* Standard JA4 counts every non-GREASE extension, including
+             * PADDING (0015). */
+            ja4->extensions_count++;
 
             /* JA4ONE count: exclude PSK (0029) and PADDING (0015) */
             if (!ngx_ssl_ja4_is_ext_dynamic(c->ssl->extensions[i])) {
@@ -389,7 +386,15 @@ int ngx_ssl_ja4(ngx_connection_t *c, ngx_pool_t *pool, ngx_ssl_ja4_t *ja4)
         }
         for (i = 0; i < c->ssl->sigalgs_sz; ++i)
         {
-            size_t sigalg_len = strlen(c->ssl->sigalgs_hash_values[i]) + 1; // +1 for null terminator
+            const char *sigalg = c->ssl->sigalgs_hash_values[i];
+            size_t sigalg_len;
+
+            if (ngx_ssl_ja4_is_ext_greased(sigalg))
+            {
+                continue;
+            }
+
+            sigalg_len = strlen(sigalg) + 1; // +1 for null terminator
 
             // Allocate memory for the signature algorithm string and copy it
             ja4->sigalgs[ja4->sigalgs_sz] = ngx_pnalloc(pool, sigalg_len);
@@ -404,14 +409,14 @@ int ngx_ssl_ja4(ngx_connection_t *c, ngx_pool_t *pool, ngx_ssl_ja4_t *ja4)
                 ja4->sigalgs = NULL;
                 return NGX_DECLINED;
             }
-            ngx_memcpy (ja4->sigalgs[ja4->sigalgs_sz], c->ssl->sigalgs_hash_values[i], sigalg_len);
+            ngx_memcpy (ja4->sigalgs[ja4->sigalgs_sz], sigalg, sigalg_len);
             ja4->sigalgs_sz++;
         }
     }
 
 #if (NGX_DEBUG)
     ngx_log_debug1 (NGX_LOG_DEBUG_EVENT, c->log, 0, "ja4: sigalgs (%d): ", ja4->sigalgs_sz);
-    for (int i = 0; i < (int) c->ssl->sigalgs_sz; i++)
+    for (int i = 0; i < (int) ja4->sigalgs_sz; i++)
         ngx_log_debug2 (NGX_LOG_DEBUG_EVENT, c->log, 0, "-- [%2d]: %s", i, ja4->sigalgs[i]);
 #endif
 
